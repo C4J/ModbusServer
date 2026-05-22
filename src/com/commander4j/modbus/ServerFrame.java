@@ -2,8 +2,9 @@ package com.commander4j.modbus;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Font;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
@@ -19,31 +20,38 @@ import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
-import javax.swing.JButton;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.JToolBar;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.text.BadLocationException;
 
+import com.commander4j.dialog.JDialogAbout;
+import com.commander4j.dialog.JDialogLicenses;
+import com.commander4j.gui.JButton4j;
+import com.commander4j.gui.JLabel4j_std;
+import com.commander4j.gui.JToggleButton4j;
+import com.commander4j.sys.Common;
+import com.commander4j.util.JHelp;
+import com.commander4j.util.JUtility;
 import com.digitalpetri.modbus.server.ProcessImage.Modification.CoilModification;
 import com.digitalpetri.modbus.server.ProcessImage.Modification.DiscreteInputModification;
 import com.digitalpetri.modbus.server.ProcessImage.Modification.HoldingRegisterModification;
 import com.digitalpetri.modbus.server.ProcessImage.Modification.InputRegisterModification;
 
 /**
- * Main application window: a connection bar, one tab per Modbus data table, and an activity
- * log. The window owns a single {@link ServerController}; starting and stopping the server
- * is done on a background thread so the bind/unbind call never blocks the event dispatch
- * thread.
+ * Main application window: a connection bar, a single unified register table covering all
+ * four Modbus data spaces (coils, discrete inputs, input registers, holding registers)
+ * aligned by address, and an activity log. The window owns a single {@link ServerController};
+ * starting and stopping the server is done on a background thread so the bind/unbind call
+ * never blocks the event dispatch thread.
  */
 public class ServerFrame extends JFrame
 {
@@ -58,38 +66,37 @@ public class ServerFrame extends JFrame
 	private final JTextField bindField = new JTextField("0.0.0.0", 12);
 	private final JSpinner portSpinner = new JSpinner(new SpinnerNumberModel(502, 1, 65535, 1));
 	private final JSpinner unitSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 247, 1));
-	private final JButton startButton = new JButton("Start");
-	private final JButton stopButton = new JButton("Stop");
-	private final JLabel statusLabel = new JLabel("Stopped");
+	private final JToggleButton4j serverToggle = new JToggleButton4j(Common.icon_disconnected);
+	private final JLabel4j_std statusLabel = new JLabel4j_std("Stopped");
 
 	private final JTextArea logArea = new JTextArea(8, 80);
 	private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS");
 
 	public ServerFrame()
 	{
-		super("Commander4j Modbus Server");
-		setDefaultCloseOperation(EXIT_ON_CLOSE);
+		super(Common.buildTitle(null));
+		JUtility.setLookAndFeel("Nimbus");
+		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 
 		add(buildConnectionBar(), BorderLayout.NORTH);
 
-		JTabbedPane tabs = new JTabbedPane();
-		for (RegisterKind kind : RegisterKind.values())
-		{
-			tabs.addTab(kind.label, new RegisterTablePanel(controller, kind));
-		}
+		UnifiedRegisterPanel registerPanel = new UnifiedRegisterPanel(controller);
 
 		logArea.setEditable(false);
 		logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		JScrollPane logScroll = new JScrollPane(logArea);
 		logScroll.setBorder(BorderFactory.createTitledBorder("Activity"));
 
-		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tabs, logScroll);
-		split.setResizeWeight(0.75);
+		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, registerPanel, logScroll);
+		split.setResizeWeight(0.78);
 		add(split, BorderLayout.CENTER);
 
-		startButton.addActionListener(_ -> doStart());
-		stopButton.addActionListener(_ -> doStop());
-		stopButton.setEnabled(false);
+		add(buildRightToolBar(), BorderLayout.EAST);
+
+		serverToggle.setToolTipText("Start Server");
+		serverToggle.setPreferredSize(new Dimension(36, 36));
+		serverToggle.setMaximumSize(new Dimension(36, 36));
+		serverToggle.addActionListener(_ -> toggleServer());
 
 		controller.getProcessImage().addModificationListener(new LoggingListener());
 
@@ -98,18 +105,11 @@ public class ServerFrame extends JFrame
 			@Override
 			public void windowClosing(WindowEvent e)
 			{
-				try
-				{
-					controller.stop();
-				}
-				catch (Exception ignored)
-				{
-					// shutting down anyway
-				}
+				confirmExit();
 			}
 		});
 
-		setSize(840, 660);
+		setSize(1020, 860);
 		centreOnActiveMonitor();
 		log("Ready. Set the bind address and port, then press Start.");
 		log("Coils and registers can be edited at any time, before or while the server runs.");
@@ -155,21 +155,63 @@ public class ServerFrame extends JFrame
 		statusLabel.setForeground(Color.GRAY);
 
 		JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 8));
-		bar.add(new JLabel("Bind address:"));
+		bar.add(new JLabel4j_std("Bind address:"));
 		bar.add(bindField);
-		bar.add(new JLabel("Port:"));
+		bar.add(new JLabel4j_std("Port:"));
 		bar.add(portSpinner);
-		bar.add(new JLabel("Unit ID:"));
+		bar.add(new JLabel4j_std("Unit ID:"));
 		bar.add(unitSpinner);
-		bar.add(startButton);
-		bar.add(stopButton);
+		bar.add(serverToggle);
 		bar.add(Box.createHorizontalStrut(12));
-		bar.add(new JLabel("Status:"));
+		bar.add(new JLabel4j_std("Status:"));
 		bar.add(statusLabel);
 		return bar;
 	}
 
-	private void doStart()
+	private JToolBar buildRightToolBar()
+	{
+		JToolBar tb = new JToolBar(JToolBar.VERTICAL);
+		tb.setFloatable(false);
+		tb.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+
+		tb.add(iconButton(Common.icon_about,   "About",    _ -> new JDialogAbout().setVisible(true)));
+		tb.add(iconButton(Common.icon_license, "Licences", _ -> new JDialogLicenses(ServerFrame.this).setVisible(true)));
+
+		JButton4j btnHelp = new JButton4j(Common.icon_help);
+		btnHelp.setToolTipText("Help");
+		btnHelp.setPreferredSize(new Dimension(36, 36));
+		btnHelp.setMaximumSize(new Dimension(36, 36));
+		new JHelp().enableHelpOnButton(btnHelp, Common.helpURL);
+		tb.add(btnHelp);
+
+		tb.add(iconButton(Common.icon_exit, "Close", _ -> confirmExit()));
+
+		return tb;
+	}
+
+	private static JButton4j iconButton(javax.swing.ImageIcon icon, String tooltip, java.awt.event.ActionListener a)
+	{
+		JButton4j b = new JButton4j(icon);
+		b.setToolTipText(tooltip);
+		b.setPreferredSize(new Dimension(36, 36));
+		b.setMaximumSize(new Dimension(36, 36));
+		b.addActionListener(a);
+		return b;
+	}
+
+	private void toggleServer()
+	{
+		if (controller.isRunning())
+		{
+			stopServer();
+		}
+		else
+		{
+			startServer();
+		}
+	}
+
+	private void startServer()
 	{
 		String host = bindField.getText().trim();
 		if (host.isEmpty())
@@ -181,7 +223,7 @@ public class ServerFrame extends JFrame
 		final String bindHost = host;
 
 		setConfigEnabled(false);
-		startButton.setEnabled(false);
+		serverToggle.setEnabled(false);
 		controller.setUnitId(unitId);
 		log("Starting server on " + bindHost + ":" + port + " (unit ID " + unitId + ")...");
 
@@ -194,7 +236,10 @@ public class ServerFrame extends JFrame
 				{
 					statusLabel.setText("Running on " + bindHost + ":" + port + "  (unit ID " + unitId + ")");
 					statusLabel.setForeground(RUNNING_COLOR);
-					stopButton.setEnabled(true);
+					serverToggle.setIcon(Common.icon_connected);
+					serverToggle.setToolTipText("Stop Server");
+					serverToggle.setSelected(true);
+					serverToggle.setEnabled(true);
 					log("Server started. Waiting for client connections.");
 				});
 			}
@@ -207,16 +252,19 @@ public class ServerFrame extends JFrame
 					statusLabel.setText("Stopped");
 					statusLabel.setForeground(Color.GRAY);
 					setConfigEnabled(true);
-					startButton.setEnabled(true);
+					serverToggle.setIcon(Common.icon_disconnected);
+					serverToggle.setToolTipText("Start Server");
+					serverToggle.setSelected(false);
+					serverToggle.setEnabled(true);
 					JOptionPane.showMessageDialog(ServerFrame.this, "Could not start the Modbus server:\n\n" + reason, "Modbus Server", JOptionPane.ERROR_MESSAGE);
 				});
 			}
 		}, "modbus-server-start").start();
 	}
 
-	private void doStop()
+	private void stopServer()
 	{
-		stopButton.setEnabled(false);
+		serverToggle.setEnabled(false);
 		log("Stopping server...");
 
 		new Thread(() ->
@@ -234,10 +282,39 @@ public class ServerFrame extends JFrame
 				statusLabel.setText("Stopped");
 				statusLabel.setForeground(Color.GRAY);
 				setConfigEnabled(true);
-				startButton.setEnabled(true);
+				serverToggle.setIcon(Common.icon_disconnected);
+				serverToggle.setToolTipText("Start Server");
+				serverToggle.setSelected(false);
+				serverToggle.setEnabled(true);
 				log("Server stopped.");
 			});
 		}, "modbus-server-stop").start();
+	}
+
+	private void confirmExit()
+	{
+		int choice = JOptionPane.showConfirmDialog(
+				ServerFrame.this,
+				"Are you sure you want to close " + Common.programName + "?",
+				"Confirm Exit",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.QUESTION_MESSAGE);
+
+		if (choice != JOptionPane.YES_OPTION)
+		{
+			return;
+		}
+
+		try
+		{
+			controller.stop();
+		}
+		catch (Exception ignored)
+		{
+			// shutting down anyway
+		}
+		dispose();
+		System.exit(0);
 	}
 
 	private void setConfigEnabled(boolean enabled)

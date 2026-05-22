@@ -1,7 +1,8 @@
 package com.commander4j.modbus;
 
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
+
+import com.commander4j.util.JUtility;
 
 /**
  * Entry point for the Commander4j Modbus TCP server simulator.
@@ -20,14 +21,7 @@ public final class ModbusServerApp
 
 	public static void main(String[] args)
 	{
-		try
-		{
-			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-		}
-		catch (Exception ignored)
-		{
-			// fall back to the cross-platform look and feel
-		}
+		JUtility.setLookAndFeel("Nimbus");
 
 		SwingUtilities.invokeLater(() -> new ServerFrame().setVisible(true));
 	}
