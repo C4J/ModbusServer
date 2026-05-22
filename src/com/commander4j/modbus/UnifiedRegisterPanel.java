@@ -3,6 +3,7 @@ package com.commander4j.modbus;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -15,8 +16,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -33,6 +32,9 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
+
+import com.commander4j.gui.JButton4j;
+import com.commander4j.sys.Common;
 
 import com.digitalpetri.modbus.server.ProcessImage.Modification.CoilModification;
 import com.digitalpetri.modbus.server.ProcessImage.Modification.DiscreteInputModification;
@@ -71,6 +73,7 @@ public class UnifiedRegisterPanel extends JPanel
 
 	private final JSpinner startSpinner;
 	private final JSpinner countSpinner;
+	private final JPopupMenu zeroMenu;
 
 	/** Addresses changed since the last refresh tick; written from Netty I/O threads. */
 	private final Map<RegisterKind, Set<Integer>> dirty = new EnumMap<>(RegisterKind.class);
@@ -83,34 +86,38 @@ public class UnifiedRegisterPanel extends JPanel
 			dirty.put(k, ConcurrentHashMap.newKeySet());
 		}
 
-		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+		setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
 
 		model = new UnifiedRegisterTableModel(controller);
 
 		startSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 65535, 1));
 		countSpinner = new JSpinner(new SpinnerNumberModel(64, 1, MAX_COUNT, 1));
+		JSpinner.NumberEditor startEditor = new JSpinner.NumberEditor(startSpinner, "#");
+		JSpinner.NumberEditor countEditor = new JSpinner.NumberEditor(countSpinner, "#");
+		startEditor.getTextField().setColumns(3);
+		countEditor.getTextField().setColumns(3);
+		startSpinner.setEditor(startEditor);
+		countSpinner.setEditor(countEditor);
 
-		JButton applyButton = new JButton("Apply range");
-		JButton zeroButton = new JButton("Zero…");
+		JButton4j applyButton = new JButton4j(Common.icon_ok);
+		applyButton.setToolTipText("Apply range");
+		applyButton.setPreferredSize(new Dimension(36, 36));
 
-		JPopupMenu zeroMenu = new JPopupMenu();
+		zeroMenu = new JPopupMenu();
 		zeroMenu.add(zeroItem(controller, "Zero Coils", RegisterKind.COILS));
 		zeroMenu.add(zeroItem(controller, "Zero Discrete Inputs", RegisterKind.DISCRETE_INPUTS));
 		zeroMenu.add(zeroItem(controller, "Zero Input Registers", RegisterKind.INPUT_REGISTERS));
 		zeroMenu.add(zeroItem(controller, "Zero Holding Registers", RegisterKind.HOLDING_REGISTERS));
 		zeroMenu.addSeparator();
 		zeroMenu.add(zeroAllItem(controller));
-		zeroButton.addActionListener(_ -> zeroMenu.show(zeroButton, 0, zeroButton.getHeight()));
 
 		JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
 		bar.add(new JLabel("Start address:"));
 		bar.add(startSpinner);
 		bar.add(new JLabel("Count:"));
 		bar.add(countSpinner);
-		bar.add(Box.createHorizontalStrut(8));
 		bar.add(applyButton);
-		bar.add(zeroButton);
-		add(bar, BorderLayout.NORTH);
+		add(bar, BorderLayout.SOUTH);
 
 		List<ColumnGroup> groups = List.of(
 				new ColumnGroup("", ADDRESS_BG, ADDRESS_FG,
@@ -214,6 +221,11 @@ public class UnifiedRegisterPanel extends JPanel
 		refreshTimer.start();
 	}
 
+	public JPopupMenu getZeroMenu()
+	{
+		return zeroMenu;
+	}
+
 	private JMenuItem zeroItem(ServerController controller, String label, RegisterKind kind)
 	{
 		JMenuItem item = new JMenuItem(label);
@@ -268,6 +280,15 @@ public class UnifiedRegisterPanel extends JPanel
 	private void applyRange()
 	{
 		stopEditing();
+		try
+		{
+			startSpinner.commitEdit();
+			countSpinner.commitEdit();
+		}
+		catch (java.text.ParseException ignored)
+		{
+			// bad text in a spinner — fall back to its last committed value
+		}
 		int start = (Integer) startSpinner.getValue();
 		int count = (Integer) countSpinner.getValue();
 		for (Set<Integer> set : dirty.values())

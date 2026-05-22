@@ -14,18 +14,22 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
-import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
@@ -63,7 +67,7 @@ public class ServerFrame extends JFrame
 
 	private final ServerController controller = new ServerController();
 
-	private final JTextField bindField = new JTextField("0.0.0.0", 12);
+	private final JTextField bindField = new JTextField("0.0.0.0", 10);
 	private final JSpinner portSpinner = new JSpinner(new SpinnerNumberModel(502, 1, 65535, 1));
 	private final JSpinner unitSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 247, 1));
 	private final JToggleButton4j serverToggle = new JToggleButton4j(Common.icon_disconnected);
@@ -78,6 +82,11 @@ public class ServerFrame extends JFrame
 		JUtility.setLookAndFeel("Nimbus");
 		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 
+		serverToggle.setToolTipText("Start Server");
+		serverToggle.setPreferredSize(new Dimension(36, 36));
+		serverToggle.setMaximumSize(new Dimension(36, 36));
+		serverToggle.addActionListener(_ -> toggleServer());
+
 		add(buildConnectionBar(), BorderLayout.NORTH);
 
 		UnifiedRegisterPanel registerPanel = new UnifiedRegisterPanel(controller);
@@ -86,17 +95,20 @@ public class ServerFrame extends JFrame
 		logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		JScrollPane logScroll = new JScrollPane(logArea);
 		logScroll.setBorder(BorderFactory.createTitledBorder("Activity"));
+		logScroll.setPreferredSize(new Dimension(0, 200));
 
-		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, registerPanel, logScroll);
-		split.setResizeWeight(0.78);
-		add(split, BorderLayout.CENTER);
+		JPanel registerArea = new JPanel(new BorderLayout());
+		registerArea.add(registerPanel, BorderLayout.CENTER);
+		registerArea.add(buildRightToolBar(registerPanel), BorderLayout.EAST);
 
-		add(buildRightToolBar(), BorderLayout.EAST);
+		JPanel logRow = new JPanel(new BorderLayout());
+		logRow.add(logScroll, BorderLayout.CENTER);
+		logRow.add(buildLogToolBar(), BorderLayout.EAST);
 
-		serverToggle.setToolTipText("Start Server");
-		serverToggle.setPreferredSize(new Dimension(36, 36));
-		serverToggle.setMaximumSize(new Dimension(36, 36));
-		serverToggle.addActionListener(_ -> toggleServer());
+		JPanel main = new JPanel(new BorderLayout());
+		main.add(registerArea, BorderLayout.CENTER);
+		main.add(logRow, BorderLayout.SOUTH);
+		add(main, BorderLayout.CENTER);
 
 		controller.getProcessImage().addModificationListener(new LoggingListener());
 
@@ -161,18 +173,28 @@ public class ServerFrame extends JFrame
 		bar.add(portSpinner);
 		bar.add(new JLabel4j_std("Unit ID:"));
 		bar.add(unitSpinner);
-		bar.add(serverToggle);
 		bar.add(Box.createHorizontalStrut(12));
 		bar.add(new JLabel4j_std("Status:"));
 		bar.add(statusLabel);
 		return bar;
 	}
 
-	private JToolBar buildRightToolBar()
+	private JToolBar buildRightToolBar(UnifiedRegisterPanel registerPanel)
 	{
 		JToolBar tb = new JToolBar(JToolBar.VERTICAL);
 		tb.setFloatable(false);
 		tb.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+
+		tb.add(serverToggle);
+
+		JPopupMenu zeroMenu = registerPanel.getZeroMenu();
+		JButton4j zeroButton = new JButton4j(Common.icon_erase);
+		zeroButton.setToolTipText("Zero registers");
+		zeroButton.setPreferredSize(new Dimension(36, 36));
+		zeroButton.setMaximumSize(new Dimension(36, 36));
+		zeroButton.addActionListener(_ ->
+				zeroMenu.show(zeroButton, -zeroMenu.getPreferredSize().width, 0));
+		tb.add(zeroButton);
 
 		tb.add(iconButton(Common.icon_about,   "About",    _ -> new JDialogAbout().setVisible(true)));
 		tb.add(iconButton(Common.icon_license, "Licences", _ -> new JDialogLicenses(ServerFrame.this).setVisible(true)));
@@ -187,6 +209,48 @@ public class ServerFrame extends JFrame
 		tb.add(iconButton(Common.icon_exit, "Close", _ -> confirmExit()));
 
 		return tb;
+	}
+
+	private JToolBar buildLogToolBar()
+	{
+		JToolBar tb = new JToolBar(JToolBar.VERTICAL);
+		tb.setFloatable(false);
+		tb.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+
+		tb.add(iconButton(Common.icon_save,   "Save log",  _ -> saveLog()));
+		tb.add(iconButton(Common.icon_eraser, "Clear log", _ -> clearLog()));
+
+		return tb;
+	}
+
+	private void saveLog()
+	{
+		String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+		JFileChooser chooser = new JFileChooser();
+		chooser.setDialogTitle("Save activity log");
+		chooser.setSelectedFile(new File("modbus-server-log-" + stamp + ".txt"));
+		if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
+		{
+			return;
+		}
+		File file = chooser.getSelectedFile();
+		try (FileWriter writer = new FileWriter(file))
+		{
+			writer.write(logArea.getText());
+			log("Log saved to " + file.getAbsolutePath());
+		}
+		catch (IOException ex)
+		{
+			JOptionPane.showMessageDialog(this,
+					"Failed to save log:\n\n" + describe(ex),
+					"Save activity log",
+					JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	private void clearLog()
+	{
+		logArea.setText("");
 	}
 
 	private static JButton4j iconButton(javax.swing.ImageIcon icon, String tooltip, java.awt.event.ActionListener a)
