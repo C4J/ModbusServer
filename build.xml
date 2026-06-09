@@ -4,7 +4,7 @@
     <property name="src.dir"    location="src"/>
     <property name="build.dir"  location="bin"/>
     <property name="lib.dir"    location="lib"/>
-    <property name="main.class" value="com.commander4j.modbus.ModbusServerApp"/>
+    <property name="main.class" value="com.commander4j.modbus.Start"/>
     <property name="jar.file"   value="${basedir}/modbusServer.jar"/>
 
     <!-- Compile / run classpath: the digitalpetri Modbus stack and its dependencies.

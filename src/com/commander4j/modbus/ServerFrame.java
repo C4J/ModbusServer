@@ -35,6 +35,9 @@ import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.BadLocationException;
 
 import com.commander4j.dialog.JDialogAbout;
@@ -76,6 +79,11 @@ public class ServerFrame extends JFrame
 	private final JTextArea logArea = new JTextArea(8, 80);
 	private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS");
 
+	private ServerConfig baseline = new ServerConfig("0.0.0.0", 502, 1);
+	private File currentConfigFile = ConfigStore.DEFAULT_FILE;
+	private boolean loading = false;
+	private boolean dirty = false;
+
 	public ServerFrame()
 	{
 		super(Common.buildTitle(null));
@@ -112,6 +120,8 @@ public class ServerFrame extends JFrame
 
 		controller.getProcessImage().addModificationListener(new LoggingListener());
 
+		installDirtyListeners();
+
 		addWindowListener(new WindowAdapter()
 		{
 			@Override
@@ -125,6 +135,8 @@ public class ServerFrame extends JFrame
 		centreOnActiveMonitor();
 		log("Ready. Set the bind address and port, then press Start.");
 		log("Coils and registers can be edited at any time, before or while the server runs.");
+
+		loadConfigOnStartup();
 	}
 
 	/**
@@ -186,6 +198,9 @@ public class ServerFrame extends JFrame
 		tb.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
 
 		tb.add(serverToggle);
+
+		tb.add(iconButton(Common.icon_open, "Open settings", _ -> openConfig()));
+		tb.add(iconButton(Common.icon_save, "Save settings", _ -> saveConfig()));
 
 		JPopupMenu zeroMenu = registerPanel.getZeroMenu();
 		JButton4j zeroButton = new JButton4j(Common.icon_erase);
@@ -357,16 +372,37 @@ public class ServerFrame extends JFrame
 
 	private void confirmExit()
 	{
-		int choice = JOptionPane.showConfirmDialog(
-				ServerFrame.this,
-				"Are you sure you want to close " + Common.programName + "?",
-				"Confirm Exit",
-				JOptionPane.YES_NO_OPTION,
-				JOptionPane.QUESTION_MESSAGE);
-
-		if (choice != JOptionPane.YES_OPTION)
+		if (dirty)
 		{
-			return;
+			int saveChoice = JOptionPane.showConfirmDialog(
+					ServerFrame.this,
+					"Settings have changed. Save changes to\n" + currentConfigFile.getAbsolutePath() + "?",
+					"Unsaved changes",
+					JOptionPane.YES_NO_CANCEL_OPTION,
+					JOptionPane.QUESTION_MESSAGE);
+
+			if (saveChoice == JOptionPane.CANCEL_OPTION || saveChoice == JOptionPane.CLOSED_OPTION)
+			{
+				return;
+			}
+			if (saveChoice == JOptionPane.YES_OPTION && !writeConfig(currentConfigFile))
+			{
+				return;
+			}
+		}
+		else
+		{
+			int choice = JOptionPane.showConfirmDialog(
+					ServerFrame.this,
+					"Are you sure you want to close " + Common.programName + "?",
+					"Confirm Exit",
+					JOptionPane.YES_NO_OPTION,
+					JOptionPane.QUESTION_MESSAGE);
+
+			if (choice != JOptionPane.YES_OPTION)
+			{
+				return;
+			}
 		}
 
 		try
@@ -393,6 +429,161 @@ public class ServerFrame extends JFrame
 		Throwable cause = (ex.getCause() != null) ? ex.getCause() : ex;
 		String message = cause.getMessage();
 		return (message != null && !message.isBlank()) ? message : cause.toString();
+	}
+
+	private ServerConfig currentValues()
+	{
+		return new ServerConfig(
+				bindField.getText().trim(),
+				(Integer) portSpinner.getValue(),
+				(Integer) unitSpinner.getValue());
+	}
+
+	private void installDirtyListeners()
+	{
+		bindField.getDocument().addDocumentListener(new DocumentListener()
+		{
+			@Override public void insertUpdate(DocumentEvent e)  { onUiChange(); }
+			@Override public void removeUpdate(DocumentEvent e)  { onUiChange(); }
+			@Override public void changedUpdate(DocumentEvent e) { onUiChange(); }
+		});
+		portSpinner.addChangeListener(_ -> onUiChange());
+		unitSpinner.addChangeListener(_ -> onUiChange());
+	}
+
+	private void onUiChange()
+	{
+		if (loading)
+		{
+			return;
+		}
+		dirty = !currentValues().equals(baseline);
+	}
+
+	private void applyConfig(ServerConfig cfg)
+	{
+		loading = true;
+		try
+		{
+			bindField.setText(cfg.bindAddress());
+			portSpinner.setValue(cfg.port());
+			unitSpinner.setValue(cfg.unitId());
+		}
+		finally
+		{
+			loading = false;
+		}
+		baseline = new ServerConfig(cfg.bindAddress().trim(), cfg.port(), cfg.unitId());
+		dirty = false;
+	}
+
+	private void loadConfigOnStartup()
+	{
+		File file = ConfigStore.DEFAULT_FILE;
+		if (!file.isFile())
+		{
+			log("No saved settings at " + file.getAbsolutePath() + " - using defaults.");
+			return;
+		}
+		try
+		{
+			ServerConfig cfg = ConfigStore.load(file);
+			applyConfig(cfg);
+			currentConfigFile = file;
+			log("Loaded settings from " + file.getAbsolutePath());
+		}
+		catch (Exception ex)
+		{
+			log("Failed to load settings from " + file.getAbsolutePath() + ": " + describe(ex));
+		}
+	}
+
+	private void openConfig()
+	{
+		JFileChooser chooser = new JFileChooser();
+		chooser.setDialogTitle("Open settings");
+		chooser.setFileFilter(new FileNameExtensionFilter("XML files (*.xml)", "xml"));
+		File dir = ConfigStore.DEFAULT_FILE.getParentFile();
+		if (dir != null && dir.isDirectory())
+		{
+			chooser.setCurrentDirectory(dir);
+		}
+		File preset = currentConfigFile.isFile() ? currentConfigFile
+				: new File(dir != null ? dir : new File("."), ConfigStore.DEFAULT_FILE.getName());
+		chooser.setSelectedFile(preset);
+		if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
+		{
+			return;
+		}
+		File file = chooser.getSelectedFile();
+		try
+		{
+			ServerConfig cfg = ConfigStore.load(file);
+			applyConfig(cfg);
+			currentConfigFile = file;
+			log("Loaded settings from " + file.getAbsolutePath());
+		}
+		catch (Exception ex)
+		{
+			JOptionPane.showMessageDialog(this,
+					"Failed to load settings:\n\n" + describe(ex),
+					"Open settings",
+					JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	private void saveConfig()
+	{
+		JFileChooser chooser = new JFileChooser();
+		chooser.setDialogTitle("Save settings");
+		chooser.setFileFilter(new FileNameExtensionFilter("XML files (*.xml)", "xml"));
+		File dir = ConfigStore.DEFAULT_FILE.getParentFile();
+		if (dir != null)
+		{
+			if (!dir.isDirectory())
+			{
+				dir.mkdirs();
+			}
+			if (dir.isDirectory())
+			{
+				chooser.setCurrentDirectory(dir);
+			}
+		}
+		File preset = currentConfigFile != null ? currentConfigFile
+				: new File(dir != null ? dir : new File("."), ConfigStore.DEFAULT_FILE.getName());
+		chooser.setSelectedFile(preset);
+		if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
+		{
+			return;
+		}
+		File file = chooser.getSelectedFile();
+		if (!file.getName().contains("."))
+		{
+			file = new File(file.getParentFile(), file.getName() + ".xml");
+		}
+		writeConfig(file);
+	}
+
+	private boolean writeConfig(File file)
+	{
+		ServerConfig cfg = currentValues();
+		try
+		{
+			ConfigStore.save(file, cfg);
+			baseline = cfg;
+			dirty = false;
+			currentConfigFile = file;
+			log("Saved settings to " + file.getAbsolutePath());
+			return true;
+		}
+		catch (Exception ex)
+		{
+			JOptionPane.showMessageDialog(this,
+					"Failed to save settings:\n\n" + describe(ex),
+					"Save settings",
+					JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
 	}
 
 	/** Appends a timestamped line to the activity log. Safe to call from any thread. */
