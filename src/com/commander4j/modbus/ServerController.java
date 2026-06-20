@@ -27,7 +27,7 @@ public class ServerController
 	private static final byte[] EMPTY_REGISTER = new byte[2];
 
 	private final ProcessImage image = new ProcessImage();
-	private volatile int unitId = 1;
+	private volatile int unitId = 0;
 
 	/**
 	 * Handles every Modbus read/write function code against {@link #image}. A request is

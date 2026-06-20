@@ -72,14 +72,14 @@ public class ServerFrame extends JFrame
 
 	private final JTextField bindField = new JTextField("0.0.0.0", 10);
 	private final JSpinner portSpinner = new JSpinner(new SpinnerNumberModel(502, 1, 65535, 1));
-	private final JSpinner unitSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 247, 1));
+	private final JSpinner unitSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 247, 1));
 	private final JToggleButton4j serverToggle = new JToggleButton4j(Common.icon_disconnected);
 	private final JLabel4j_std statusLabel = new JLabel4j_std("Stopped");
 
 	private final JTextArea logArea = new JTextArea(8, 80);
 	private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS");
 
-	private ServerConfig baseline = new ServerConfig("0.0.0.0", 502, 1);
+	private ServerConfig baseline = new ServerConfig("0.0.0.0", 502, 0);
 	private File currentConfigFile = ConfigStore.DEFAULT_FILE;
 	private boolean loading = false;
 	private boolean dirty = false;
